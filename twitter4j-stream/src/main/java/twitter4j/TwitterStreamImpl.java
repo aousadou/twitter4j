@@ -557,7 +557,7 @@ class TwitterStreamImpl extends TwitterBaseImpl implements TwitterStream {
                             }
                             if (te.getStatusCode() > 200) {
                                 timeToSleep = (waitBeforeRetry.nextInt(HTTP_ERROR_WAIT_CAP -
-+                                    HTTP_ERROR_INITIAL_WAIT) + HTTP_ERROR_INITIAL_WAIT) * 60 * 1000;
+                                    HTTP_ERROR_INITIAL_WAIT) + HTTP_ERROR_INITIAL_WAIT) * 60 * 1000;
                             } else if (0 == timeToSleep) {
                                 timeToSleep = TCP_ERROR_INITIAL_WAIT;
                             }
