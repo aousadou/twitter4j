@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 
 import static twitter4j.HttpResponseCode.FORBIDDEN;
 import static twitter4j.HttpResponseCode.NOT_ACCEPTABLE;
@@ -35,6 +36,7 @@ import static twitter4j.HttpResponseCode.NOT_ACCEPTABLE;
  */
 class TwitterStreamImpl extends TwitterBaseImpl implements TwitterStream {
     private static final long serialVersionUID = 5621090317737561048L;
+    private static final Random waitBeforeRetry = new Random();
     private final HttpClient http;
     private static final Logger logger = Logger.getLogger(TwitterStreamImpl.class);
 
@@ -430,15 +432,21 @@ class TwitterStreamImpl extends TwitterBaseImpl implements TwitterStream {
 
     /*
      https://dev.twitter.com/docs/streaming-api/concepts#connecting
-     When a network error (TCP/IP level) is encountered, back off linearly. Perhaps start at 250 milliseconds, double, and cap at 16 seconds
+     When a network error (TCP/IP level) is encountered, back off linearly.
+     Perhaps start at 250 milliseconds, double, and cap at 16 seconds
      When a HTTP error (> 200) is returned, back off exponentially.
-     Perhaps start with a 10 second wait, double on each subsequent failure, and finally cap the wait at 240 seconds. Consider sending an alert to a human operator after multiple HTTP errors, as there is probably a client configuration issue that is unlikely to be resolved without human intervention. There's not much point in polling any faster in the face of HTTP error codes and your client is may run afoul of a rate limit.
+     Perhaps start with a duration randomly generated between 2 and 15 minutes wait,
+     double on each subsequent failure, and finally cap the wait at 15 seconds.
+     Consider sending an alert to a human operator after multiple HTTP errors,
+     as there is probably a client configuration issue that is unlikely to be resolved without human
+     intervention. There's not much point in polling any faster in the face of HTTP error codes and
+     your client is may run afoul of a rate limit.
      */
     private static final int TCP_ERROR_INITIAL_WAIT = 250;
     private static final int TCP_ERROR_WAIT_CAP = 16 * 1000;
 
-    private static final int HTTP_ERROR_INITIAL_WAIT = 10 * 1000;
-    private static final int HTTP_ERROR_WAIT_CAP = 240 * 1000;
+    private static final int HTTP_ERROR_INITIAL_WAIT = 2;
+    private static final int HTTP_ERROR_WAIT_CAP = 15;
 
     private static final int NO_WAIT = 0;
 
@@ -548,13 +556,16 @@ class TwitterStreamImpl extends TwitterBaseImpl implements TwitterStream {
                                 }
                             }
                             if (te.getStatusCode() > 200) {
-                                timeToSleep = HTTP_ERROR_INITIAL_WAIT;
+                                timeToSleep = (waitBeforeRetry.nextInt(HTTP_ERROR_WAIT_CAP -
++                                    HTTP_ERROR_INITIAL_WAIT) + HTTP_ERROR_INITIAL_WAIT) * 60 * 1000;
                             } else if (0 == timeToSleep) {
                                 timeToSleep = TCP_ERROR_INITIAL_WAIT;
                             }
                         }
-                        if (te.getStatusCode() > 200 && timeToSleep < HTTP_ERROR_INITIAL_WAIT) {
-                            timeToSleep = HTTP_ERROR_INITIAL_WAIT;
+                        if (te.getStatusCode() > 200 && timeToSleep < HTTP_ERROR_INITIAL_WAIT * 60
+                            * 1000) {
+                            timeToSleep = (waitBeforeRetry.nextInt(HTTP_ERROR_WAIT_CAP -
+                                     HTTP_ERROR_INITIAL_WAIT) + HTTP_ERROR_INITIAL_WAIT) * 60 * 1000;
                         }
                         if (connected) {
                             for (ConnectionLifeCycleListener listener : lifeCycleListeners) {
@@ -577,7 +588,8 @@ class TwitterStreamImpl extends TwitterBaseImpl implements TwitterStream {
                                 Thread.sleep(timeToSleep);
                             } catch (InterruptedException ignore) {
                             }
-                            timeToSleep = Math.min(timeToSleep * 2, (te.getStatusCode() > 200) ? HTTP_ERROR_WAIT_CAP : TCP_ERROR_WAIT_CAP);
+                            timeToSleep = Math.min(timeToSleep * 2, (te.getStatusCode() > 200) ?
+                                HTTP_ERROR_WAIT_CAP * 60 * 1000 : TCP_ERROR_WAIT_CAP);
                         }
                         stream = null;
                         logger.debug(te.getMessage());
